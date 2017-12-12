@@ -1,0 +1,62 @@
+---
+title: "Testing For Loops for Bringing in Data"
+author: "Faye Harwell"
+date: "December 10, 2017"
+output: html_document
+---
+
+```{r}
+# read txt files with names of the form Patient*.txt
+txt_files <- list.files(path= ".", pattern = "chimp*", all.files= TRUE)
+txt_files
+# read txt files into a list (assuming separator is a comma)
+
+xdata <- lapply(txt_files, read.table, header=T, sep = "\t")
+xdata
+```
+
+
+
+```{r}
+# read txt files with names of the form Patient*.txt
+txt_files <- list.files(path= ".", pattern = "chimp*", all.files= TRUE)
+# read txt files into a list (assuming separator is a comma)
+
+xdata <- lapply(txt_files, read.table, header=T, sep = "\t")
+
+# Get order of values in time (although all the data is already ordered according to time)
+for (j in 1:3) {
+o<-order(xdata[[j]]$time)
+xdata[[j]]<-xdata[[j]][o,]
+# Calculate the number of entries in data
+nmeas<-nrow(xdata[[j]])
+# Create a vector for the selection variable
+sel<-rep(1, nmeas)
+# Mark data points as being smaller than a subsequent one
+TEST <- xdata[[j]]$temperature
+for (i in 1:(nmeas-1)) {
+  if (TEST[i]< max(TEST[(i+1):nmeas])) 
+  {
+  sel[i]=0
+  }
+}
+#Set start values of Coefficients:
+c1<- max(xdata[[j]]$temperature) - min(xdata[[j]]$temperature)
+c2<-(max(xdata[[j]]$time)+min(xdata[[j]]$time))/2
+c3<-c2/6
+c4<-min(xdata[[j]]$temperature)
+
+xdata[[j]]<-cbind(xdata[[j]],sel)
+data2<-subset(xdata[[j]],xdata[[j]]$sel==1)
+
+# Do the fitting:
+res<- nls(data2$temperature~c4+c1*1/(1+exp(((data2$time-c2)/c3))), data= data2, start= list(c1=c1, c2=c2, c3=c3, c4=c4))
+
+# Make result accessible
+results<-as.vector(coef(res))
+print(results)
+}
+
+# Or, simply looks at the results of the function
+res
+```

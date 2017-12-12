@@ -1,0 +1,226 @@
+---
+title: "Final Replication Assignment"
+author: "Faye Harwell"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+  'html_document:': default
+---
+
+# Introduction
+
+This replication assignment is based off of the following publication:
+
+Jensen, S. A., Mundry, R., Nunn, C. L., Boesch, C., & Leendertz, F. H. (2009). Non-invasive body temperature measurement of wild chimpanzees using fecal temperature decline. <i>Journal of wildlife diseases</i>, 45(2), 542-546.
+
+This paper attempts to establish a non-invasive method for measuring body temperature in a wild population of chimpanzees, since body temperature can be an indicator of overall health. Individuals with a high pathogen load or disease will likely experience a notable increase or decrease in body temperature similar to humans. 
+
+This non-invasive method involves measuring fecal temperature immediately after defecation. Fecal temperature cannot be used as a direct measurement of body temperature though. Thus, Jensen et al. (2009) measured rectal temperature followed by a series of fecal temperatures in human participants. From rectal and fecal temperatures, the sigmoidal curve of the fecal temperatures was compared to the rectal temperature to establish the difference between the two sets of measurements. 
+
+# Beginnings
+
+To demonstrate the nature of the data, the authors included a figure (Figure 1) of an example of one of the human samples. While I did not select the same sample, I will also be graphing a human sample
+
+```{r}
+# Bringing the data in:
+example_curve<-read.table(file="Figure1Data.txt",header=T, sep="\t")
+example_curve
+```
+In this data, <b>Time</b> is given based off of a number shown on a voice recording, <b>Time_C</b> is a corrected time, and <b>Temperature</b> is the fecal temperature provided in degrees Celcius. 
+
+```{r}
+library(ggplot2)
+p <- ggplot(example_curve, aes(Time_C, Temperature))
+p <- p + geom_point()+ labs(xlab("Time after Defecation (Minutes)")) + labs(ylab("Temperature (Celcius)"))
+p
+```
+
+This is the basic trend that we expect for all of the data. As <b>Time after Defecation</b> increases, we would expect the <b>Temperature</b> of the fecal sample to decrease. In samples where there is a short rise followed by a decrease in temperature, the points prior to the maximum temperature were discarded. These would be readings likely taken when temperature was adjusting and not accurately recording temperature of the sample.
+
+# Determining the Sigmoid Curve 
+
+The equation to calculate the sigmoid curve for each temperature reading was determined from rectal and fecal temperature readings:
+
+<img src= "Equation.Jensen.PNG">
+
+where <i>T</i> is temperature (at a given time), <i>t</i> is time since defecation, and <i>a, b, c,</i> and <i>d</i> are coeficcients that describe the shape of the sigmoid curve. 
+
+
+The following chunk of code allows us to bring in multiple text files that are all named using a particular coding system. In this case, all text files are named 'chimp*' where the asterisks would be the chimp ID number. 
+
+```{r}
+# read txt files with names of the form Patient*.txt
+txt_files <- list.files(path= ".", pattern = "chimp*", all.files= TRUE)
+txt_files
+# read txt files into a list (assuming separator is a comma)
+
+xdata <- lapply(txt_files, read.table, header=T, sep = "\t")
+xdata
+```
+
+Using the following code, we can then calculate the four coeficcients (a,b,c,d) for each sample using the following code:
+
+```{r}
+# read txt files with names of the form Patient*.txt
+txt_files <- list.files(path= ".", pattern = "chimp*", all.files= TRUE)
+# read txt files into a list (assuming separator is a comma)
+
+xdata <- lapply(txt_files, read.table, header=T, sep = "\t")
+
+# Get order of values in time (although all the data is already ordered according to time)
+for (j in 1:3) {
+o<-order(xdata[[j]]$time)
+xdata[[j]]<-xdata[[j]][o,]
+# Calculate the number of entries in data
+nmeas<-nrow(xdata[[j]])
+# Create a vector for the selection variable
+sel<-rep(1, nmeas)
+# Mark data points as being smaller than a subsequent one
+TEST <- xdata[[j]]$temperature
+for (i in 1:(nmeas-1)) {
+  if (TEST[i]< max(TEST[(i+1):nmeas])) 
+  {
+  sel[i]=0
+  }
+}
+#Set start values of Coefficients:
+c1<- max(xdata[[j]]$temperature) - min(xdata[[j]]$temperature)
+c2<-(max(xdata[[j]]$time)+min(xdata[[j]]$time))/2
+c3<-c2/6
+c4<-min(xdata[[j]]$temperature)
+
+xdata[[j]]<-cbind(xdata[[j]],sel)
+data2<-subset(xdata[[j]],xdata[[j]]$sel==1)
+
+# Do the fitting:
+res<- nls(data2$temperature~c4+c1*1/(1+exp(((data2$time-c2)/c3))), data= data2, start= list(c1=c1, c2=c2, c3=c3, c4=c4))
+
+# Make result accessible
+results<-as.vector(coef(res))
+print(results)
+}
+
+```
+
+<img src= "Rcoding.JPEG">
+
+Sometimes memes don't have proper grammar.... but we are so happy about doing NESTED for loops that we don't care about proper grammar!
+
+Using the equation above (and the coeficcients computed by the above code), the estimated rectal temperature of a given individual can be obtained by setting variable <i>t</i> to t=0. 
+
+# Rectal and Fecal Temperatures for Human Samples
+
+Once the estimates for the rectal temperature were obtained using the fecal temperatures, the measured temperature (rectal) and estimated temperature (fecal) were compared. The authors predicted that fecal temperature would be an accurate estimate for rectal temperature. 
+
+First, I will load the measured and estimated temperatures:
+
+```{r}
+meas_est<-read.table(file="HumanFecalSamples.txt",header=T, sep="\t")
+attach(meas_est)
+meas_est
+```
+
+# Spearman's Rank Correlation
+
+The authors conducted a Spearman's Rank Correlation Test on the data:
+
+<img src= "Spear.PNG">
+
+So, now I will run a Spearman's Rank Correlation comparing measured and estimated temperatures. This test will establish whether there is a relationship between the measured and estimated temperatures. 
+
+```{r}
+Spear<- cor.test(Measured, Estimated, method= "spearman")
+Spear
+```
+While not receiving the identical value of rho, my value is roughly comparable (off by 0.05) and the p-value remains less than or equal to 0.001, which was reported in the study. AND this means that measured and estimated temperatures are indeed related to one another!
+
+# Deviation Between Estimated and Actual Temperatures
+
+Next, the authors reported, "The average (arithmetic mean) absolute deviation between estimates and actual rectal temperatures was 0.22 C (n529)" (543). To calculate this deviation, I will calculate the difference between the measured and estimated temperatures. Next, I will take the absolute value of these differences. From the absolute difference, I will take the average:
+
+```{r}
+for(i in 1:length(meas_est$Measured)){
+meas_est$Difference[i]<- meas_est$Estimated[i]-meas_est$Measured[i]}
+meas_est$Absolute<- abs(meas_est$Difference)
+meas_est
+```
+
+```{r}
+averageAbsDiff <- mean(meas_est$Absolute)
+averageAbsDiff
+```
+
+Huzah it matches!
+
+# More Number Details...
+
+Next the authors reported, "Fifteen of the estimates differed less than 0.12 C from the actual value, whereas only three differed by more than 0.5 C from the rectal temperature" (543). We can easily count how many of the results are below 0.12 C or greater than 0.5 C. 
+
+```{r}
+countLesser <- 0
+for(i in 1:length(meas_est$Measured)){
+  if(meas_est$Absolute[i] <= 0.12){
+    countLesser <- countLesser + 1
+  }
+}
+countLesser
+```
+
+Not exactly correct.... and I can't find anything wrong with my code (manually counted 14 samples below 0.12 C)... grr!
+
+```{r}
+countGreater <- 0
+for(i in 1:length(meas_est$Measured)){
+  if(meas_est$Absolute[i] > 0.5){
+    countGreater <- countGreater + 1
+  }
+}
+countGreater
+```
+
+Perfection!
+
+# Wilcoxon Test
+
+Unfortunately, conducting a Wilcoxon Test on their data with the wilcox.test() function does not yield the same results as published in Jensen et al. (2009): 
+
+<img src= "Wilcoxon.PNG">
+
+```{r}
+Will <- wilcox.test(meas_est$Measured, meas_est$Estimated, paired=TRUE) 
+Will
+```
+
+Thus, I will do the Wilcoxon Signed Rank Test by hand, where I specifically calculate V/T for the overestimated temperatures (+):
+
+```{r}
+for(i in 1:length(meas_est$Measured)){
+meas_est$Sign[i]<- sign(meas_est$Difference[i])}
+meas_est
+```
+```{r}
+for(i in 1:length(meas_est$Measured)){
+meas_est$Rank<- rank(meas_est$Absolute)}
+meas_est
+```
+ 
+```{r}
+T_pos <- 0
+T_neg <- 0
+for(i in 1:length(meas_est$Measured)){
+  if(meas_est$Sign[i] > 0){
+    T_pos <- T_pos + meas_est$Rank[i]
+  }
+  else{
+    T_neg <- T_neg + meas_est$Rank[i]
+  }
+}
+T_pos
+```
+Again, this is very close, but just slightly off from the published value. I predict that they likely switched the rank for two of their samples when doing this analysis by hand. The reason that this needed to be done by hand is that they were specifically looking for the estimated temperatures that were overestimates of actual temperature (when you use the wilcox.test() function in R, it gives you the V value for the estimate temperatures that underestimate actual temperature). 
+
+Enjoy reading about poop data (as I have been calling it)! And this dancing chimp gif!
+
+<img src= "DancingChimp.gif">
